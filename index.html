@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Blob Snob - Interactive Procedural WebGL Visualization</title>
+    
+    <!-- SEO & Metadata -->
+    <meta name="description" content="Blob Snob is a real-time, interactive WebGL raymarching experiment. Manipulate procedural gyroid structures, color palettes, and animation speeds in your browser.">
+    <meta name="keywords" content="WebGL, raymarching, shader art, procedural generation, gyroid, interactive visualization, generative art, Chris Pirillo, Blob Snob">
+    <meta name="author" content="Chris Pirillo">
+    <link rel="canonical" href="https://pirillo.com/arcade/blob-snob.html">
+
+    <!-- Social Metadata -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://pirillo.com/arcade/blob-snob.html">
+    <meta property="og:title" content="Blob Snob - Interactive Procedural WebGL Visualization">
+    <meta property="og:description" content="Explore mesmerizing, fluid abstract art directly in your browser. A WebGL experiment in procedural gyroid structures.">
+    <meta property="og:image" content="https://pirillo.com/arcade/images/blob-snob.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:creator" content="@ChrisPirillo">
+
+    <!-- Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-1CQ4D3VQ3L"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-1CQ4D3VQ3L');
+    </script>
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Blob Snob",
+      "url": "https://pirillo.com/arcade/blob-snob.html",
+      "description": "A raymarched procedural visualization allowing users to interact with gyroid structures and color palettes in real-time.",
+      "image": "https://pirillo.com/arcade/images/blob-snob.png",
+      "author": {
+        "@type": "Person",
+        "name": "Chris Pirillo",
+        "url": "https://chris.pirillo.com/"
+      },
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires WebGL support"
+    }
+    </script>
+
+    <style>
+        :root {
+            --bg-color: #050505;
+            --panel-bg: rgba(10, 10, 12, 0.9);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f3f3f3;
+            --text-muted: #888890;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.4);
+            --accent-hover: #60a5fa;
+            --control-bg: rgba(255, 255, 255, 0.04);
+            --control-hover: rgba(255, 255, 255, 0.08);
+            --font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+            --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            overflow: hidden;
+            font-family: var(--font-family);
+            color: var(--text-main);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Responsive Canvas */
+        #glcanvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            touch-action: none;
+        }
+
+        /* Overlays & Transitions */
+        #blackout {
+            position: absolute;
+            inset: 0;
+            background: #000;
+            opacity: 1;
+            transition: opacity 0.4s var(--ease-out);
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #menu-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 20;
+        }
+        #menu-overlay.active { opacity: 1; pointer-events: auto; }
+
+        /* Icon Buttons */
+        .icon-btn {
+            background: rgba(15, 15, 18, 0.6);
+            border: 1px solid var(--panel-border);
+            color: var(--text-main);
+            border-radius: 12px;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            backdrop-filter: blur(12px);
+            transition: all 0.2s var(--ease-out);
+            z-index: 30;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .icon-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--accent);
+            transform: scale(1.05);
+        }
+
+        #hamburger-btn {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+        }
+        
+        #hamburger-icon {
+            width: 18px;
+            height: 12px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        #hamburger-icon span {
+            display: block;
+            height: 2px;
+            width: 100%;
+            background: currentColor;
+            border-radius: 2px;
+        }
+
+        /* Sidebar Panel (Refactored) */
+        #settings-panel {
+            position: absolute;
+            top: 0;
+            right: -100%;
+            width: 100%;
+            max-width: 360px;
+            height: 100%;
+            background: var(--panel-bg);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border-left: 1px solid var(--panel-border);
+            display: flex;
+            flex-direction: column;
+            transition: right 0.4s var(--ease-out);
+            z-index: 40;
+            box-shadow: -20px 0 50px rgba(0,0,0,0.5);
+        }
+        #settings-panel.active { right: 0; }
+
+        .settings-header {
+            flex-shrink: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--panel-border);
+            background: rgba(255, 255, 255, 0.02);
+        }
+        .settings-header h2 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        #info-trigger-btn {
+            background: transparent;
+            border: 1px solid var(--panel-border);
+            color: var(--text-muted);
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+        #info-trigger-btn:hover { border-color: var(--text-main); color: var(--text-main); }
+
+        #close-menu-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.8rem;
+            cursor: pointer;
+            line-height: 1;
+            padding: 8px;
+            margin: -8px;
+        }
+
+        .settings-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }
+
+        .settings-section {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .section-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        /* Control UI */
+        .control-row {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .control-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+        }
+        .value-display {
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: var(--accent);
+            background: rgba(59, 130, 246, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+            height: 18px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            background: var(--control-bg);
+            border-radius: 2px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 14px;
+            width: 14px;
+            border-radius: 50%;
+            background: #fff;
+            margin-top: -5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            cursor: pointer;
+        }
+
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--control-bg);
+            padding: 12px;
+            border-radius: 8px;
+        }
+
+        /* Color Grid */
+        .palette-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+        .color-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        input[type="color"] {
+            -webkit-appearance: none;
+            border: none;
+            width: 100%;
+            height: 36px;
+            border-radius: 6px;
+            cursor: pointer;
+            background: none;
+        }
+        input[type="color"]::-webkit-color-swatch { border: none; border-radius: 6px; }
+
+        /* Buttons */
+        .btn {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            padding: 14px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+            text-align: center;
+        }
+        .btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+        .btn.secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--panel-border);
+        }
+        .btn.secondary:hover { background: rgba(255, 255, 255, 0.1); }
+        .btn.danger { color: #ff6b6b; border-color: rgba(255, 107, 107, 0.2); }
+
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+        /* Info Modal */
+        #info-modal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.95);
+            background: rgba(15, 15, 18, 0.98);
+            backdrop-filter: blur(40px);
+            border: 1px solid var(--panel-border);
+            padding: 32px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 440px;
+            z-index: 50;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s var(--ease-out);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+        }
+        #info-modal.active { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+        #info-modal h3 { margin: 0 0 16px 0; font-size: 1.4rem; }
+        #info-modal p { color: var(--text-muted); line-height: 1.6; font-size: 0.95rem; margin-bottom: 12px; }
+        #info-modal ul { list-style: none; padding: 0; margin-top: 24px; display: flex; gap: 16px; flex-wrap: wrap; border-top: 1px solid var(--panel-border); padding-top: 20px; }
+        #info-modal a { color: var(--accent); text-decoration: none; font-weight: 600; }
+        #info-close { position: absolute; top: 24px; right: 24px; background: rgba(255,255,255,0.05); border-radius: 50%; width: 32px; height: 32px; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; }
+
+        #import-input { display: none; }
+        @media (max-width: 600px) { #settings-panel { max-width: 100%; } }
+    </style>
+</head>
+<body>
+
+    <canvas id="glcanvas" aria-label="Interactive 3D Procedural Visualization"></canvas>
+    <div id="blackout" role="presentation"></div>
+    <div id="menu-overlay" role="presentation"></div>
+
+    <button id="hamburger-btn" class="icon-btn" aria-label="Open Settings">
+        <div id="hamburger-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <aside id="settings-panel" aria-label="Settings Panel">
+        <div class="settings-header">
+            <h2>Blob Snob <button id="info-trigger-btn" aria-label="About this app">?</button></h2>
+            <button id="close-menu-btn" aria-label="Close Menu">×</button>
+        </div>
+        
+        <div class="settings-body">
+            <button class="btn" id="btn-randomize">Randomize All</button>
+
+            <div class="settings-section">
+                <div class="section-label">Animation</div>
+                <div class="toggle-row">
+                    <span style="font-size: 0.9rem; font-weight: 500;">Auto-Advance</span>
+                    <input type="checkbox" id="auto-advance" aria-label="Toggle Auto-Advance">
+                </div>
+                <div class="control-row">
+                    <div class="control-header"><label for="param-interval">Interval (s)</label><span class="value-display" id="val-interval">10.0</span></div>
+                    <input type="range" id="param-interval" min="2" max="60" step="1" value="10">
+                </div>
+            </div>
+            
+            <div class="settings-section">
+                <div class="section-label">Geometry</div>
+                <div class="control-row">
+                    <div class="control-header"><label for="param-scale">Scale</label><span class="value-display" id="val-scale">4.00</span></div>
+                    <input type="range" id="param-scale" min="1.0" max="10.0" step="0.1" value="4.0">
+                </div>
+                <div class="control-row">
+                    <div class="control-header"><label for="param-thickness">Wall Thickness</label><span class="value-display" id="val-thickness">0.10</span></div>
+                    <input type="range" id="param-thickness" min="0.0" max="0.5" step="0.01" value="0.1">
+                </div>
+                <div class="control-row">
+                    <div class="control-header"><label for="param-speed">Fluidity</label><span class="value-display" id="val-speed">1.00</span></div>
+                    <input type="range" id="param-speed" min="0.0" max="3.0" step="0.05" value="1.0">
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <div class="section-label">Rendering</div>
+                <div class="control-row">
+                    <div class="control-header"><label for="param-rim">Rim Intensity</label><span class="value-display" id="val-rim">0.50</span></div>
+                    <input type="range" id="param-rim" min="0.0" max="1.0" step="0.01" value="0.5">
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <div class="section-label">Palette</div>
+                <div class="palette-grid">
+                    <div class="color-item"><input type="color" id="param-colorBase" value="#737373" aria-label="Base Color"></div>
+                    <div class="color-item"><input type="color" id="param-colorContrast" value="#595959" aria-label="Contrast Color"></div>
+                    <div class="color-item"><input type="color" id="param-colorPhase" value="#b26333" aria-label="Phase Color"></div>
+                </div>
+                <div id="val-colorBase" style="display:none"></div>
+                <div id="val-colorContrast" style="display:none"></div>
+                <div id="val-colorPhase" style="display:none"></div>
+            </div>
+
+            <div class="settings-section">
+                <button class="btn secondary" id="btn-export-4k">Download 4K Wallpaper</button>
+                <div class="btn-grid">
+                    <button class="btn secondary" id="btn-export-settings">Save JSON</button>
+                    <button class="btn secondary" id="btn-import-settings">Load JSON</button>
+                </div>
+                <button class="btn secondary danger" id="btn-reset">Reset to Defaults</button>
+            </div>
+            <input type="file" id="import-input" accept=".json">
+        </div>
+    </aside>
+
+    <section id="info-modal" role="dialog" aria-modal="true" aria-labelledby="info-title">
+        <button id="info-close" aria-label="Close Info">×</button>
+        <h3 id="info-title">About Blob Snob</h3>
+        <p>A raymarched procedural visualization allowing for real-time interaction with abstract organic structures.</p>
+        <p style="font-size: 0.85rem; color: var(--text-muted);">• Drag to rotate • Scroll to zoom • Tap to randomize</p>
+        <ul>
+            <li><a href="https://pirillo.com/arcade/" target="_blank" rel="noopener">More Apps</a></li>
+            <li><a href="https://chris.pirillo.com/" target="_blank" rel="noopener">Follow Chris</a></li>
+            <li><a href="https://ctrlaltcreate.live/" target="_blank" rel="noopener">Learn More</a></li>
+        </ul>
+    </section>
+
+    <script>
+        // --- WebGL Shader Code ---
+        const vertexShaderSource = `
+            attribute vec2 a_position;
+            void main() { gl_Position = vec4(a_position, 0.0, 1.0); }
+        `;
+
+        const fragmentShaderSource = `
+            precision highp float;
+            uniform vec2 u_resolution;
+            uniform float u_time;
+            uniform float u_scale, u_thickness, u_speed, u_rim, u_zoom;
+            uniform vec3 u_colorBase, u_colorContrast, u_colorPhase;
+            uniform vec2 u_cameraRot;
+
+            vec3 pal(float t) {
+                return u_colorBase + u_colorContrast * cos(6.28318 * (t * vec3(1.0) + u_colorPhase));
+            }
+
+            float gyroid(vec3 p, float scale) {
+                p *= scale;
+                float bias = mix(1.1, 2.65, sin(u_time * u_speed * 0.4 + p.x/3.0 + p.z/4.0) * 0.5 + 0.5);
+                return abs(dot(sin(p * 1.01), cos(p.zxy * 1.61)) - bias) / (scale * 1.5) - u_thickness;
+            }
+
+            float scene(vec3 p) { return 0.7 * gyroid(p, u_scale); }
+
+            vec3 norm(vec3 p) {
+                mat3 k = mat3(p, p, p) - mat3(0.01);
+                return normalize(scene(p) - vec3(scene(k[0]), scene(k[1]), scene(k[2])));
+            }
+
+            mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+            void main() {
+                vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
+                uv *= u_zoom;
+                vec3 ro = vec3(u_time * u_speed * 0.25, 1.5, 0.3);
+                vec3 rd = normalize(vec3(1.0, uv));
+                rd.yz *= rot(u_cameraRot.y);
+                rd.xz *= rot(u_cameraRot.x);
+
+                vec3 p = ro;
+                bool hit = false;
+                for (int i = 0; i < 100; i++) {
+                    float d = scene(p);
+                    if (d * d < 0.00001) { hit = true; break; }
+                    p += rd * d;
+                    if (distance(p, ro) > 8.0) break;
+                }
+
+                vec3 n = norm(p);
+                float ao = 1.0 - smoothstep(-0.3, 0.75, scene(p + n * 0.4)) * smoothstep(-3.0, 3.0, scene(p + n * 1.0));
+                
+                // RESTORED: Smooth transition logic using Rim Intensity instead of hard banding
+                float fresPower = 1.0 + u_rim * 6.0;
+                float fres = -pow(max(0.0, 0.8 - abs(dot(rd, n))), fresPower);
+                
+                vec3 col = pal(0.1 - u_time * u_speed * 0.01 + p.x * 0.28 + p.y * 0.2 + p.z * 0.2);
+                col = (vec3(fres) + col) * ao;
+                col = mix(col, vec3(0.0), !hit ? 1.0 : smoothstep(0.0, 8.0, distance(p, ro)));
+                
+                vec2 rUV = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
+                vec3 vign = smoothstep(0.0, 1.0, vec3(1.0 - (length(rUV * 0.8) - 0.1)));
+                col = mix(vec3(0.0), col, vign + 0.1);
+                col = smoothstep(0.0, 1.0 + 0.3 * sin(u_time * u_speed + p.x * 4.0 + p.z * 4.0), col);
+                
+                gl_FragColor = vec4(sqrt(max(col, 0.0)), 1.0);
+            }
+        `;
+
+        // --- State ---
+        const defaultState = { scale: 4.0, thickness: 0.1, speed: 1.0, rim: 0.5, colorBase: '#737373', colorContrast: '#595959', colorPhase: '#b26333', zoom: 1.0, rotX: 0.0, rotY: 0.0 };
+        let state = JSON.parse(JSON.stringify(defaultState));
+        let isTransitioning = false, autoAdvanceInterval = null, autoAdvanceEnabled = false, advanceSeconds = 10;
+        let isDragging = false, lastPointer = { x: 0, y: 0 }, pointerDownStart = 0, pointerMoved = false, initialPinchDist = 0, initialZoom = 1.0, lastTapTime = 0;
+
+        // --- WebGL Init ---
+        const canvas = document.getElementById('glcanvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        function compile(gl, src, type) {
+            const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(s)); gl.deleteShader(s); return null; }
+            return s;
+        }
+        const prog = gl.createProgram();
+        gl.attachShader(prog, compile(gl, vertexShaderSource, gl.VERTEX_SHADER));
+        gl.attachShader(prog, compile(gl, fragmentShaderSource, gl.FRAGMENT_SHADER));
+        gl.linkProgram(prog);
+
+        const posBuf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+        const aPos = gl.getAttribLocation(prog, 'a_position');
+        const u = { res: gl.getUniformLocation(prog, 'u_resolution'), time: gl.getUniformLocation(prog, 'u_time'), scale: gl.getUniformLocation(prog, 'u_scale'), thick: gl.getUniformLocation(prog, 'u_thickness'), speed: gl.getUniformLocation(prog, 'u_speed'), rim: gl.getUniformLocation(prog, 'u_rim'), zoom: gl.getUniformLocation(prog, 'u_zoom'), base: gl.getUniformLocation(prog, 'u_colorBase'), contra: gl.getUniformLocation(prog, 'u_colorContrast'), phase: gl.getUniformLocation(prog, 'u_colorPhase'), rot: gl.getUniformLocation(prog, 'u_cameraRot') };
+
+        function h2r(h) { return [parseInt(h.slice(1,3),16)/255, parseInt(h.slice(3,5),16)/255, parseInt(h.slice(5,7),16)/255]; }
+        function r2h(r,g,b) { return "#"+((1<<24)+ (Math.round(r*255)<<16)+(Math.round(g*255)<<8)+Math.round(b*255)).toString(16).slice(1); }
+        function randS() { return { scale: Math.random()*6.5+1.5, thickness: Math.random()*0.38+0.02, speed: Math.random()*1.8+0.2, rim: Math.random(), colorBase: r2h(Math.random(),Math.random(),Math.random()), colorContrast: r2h(Math.random(),Math.random(),Math.random()), colorPhase: r2h(Math.random(),Math.random(),Math.random()), zoom: state.zoom, rotX: state.rotX, rotY: state.rotY }; }
+
+        function render() {
+            gl.useProgram(prog); gl.viewport(0,0,canvas.width,canvas.height);
+            gl.bindBuffer(gl.ARRAY_BUFFER, posBuf); gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+            gl.uniform2f(u.res, canvas.width, canvas.height); gl.uniform1f(u.time, (Date.now() - startTime)/1000);
+            gl.uniform1f(u.scale, state.scale); gl.uniform1f(u.thick, state.thickness); gl.uniform1f(u.speed, state.speed); gl.uniform1f(u.rim, state.rim); gl.uniform1f(u.zoom, state.zoom);
+            gl.uniform3fv(u.base, h2r(state.colorBase)); gl.uniform3fv(u.contra, h2r(state.colorContrast)); gl.uniform3fv(u.phase, h2r(state.colorPhase)); gl.uniform2f(u.rot, state.rotX, state.rotY);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
+
+        function loop() { render(); requestAnimationFrame(loop); }
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.addEventListener('resize', resize); resize();
+
+        const inputs = { scale: document.getElementById('param-scale'), thickness: document.getElementById('param-thickness'), speed: document.getElementById('param-speed'), rim: document.getElementById('param-rim'), colorBase: document.getElementById('param-colorBase'), colorContrast: document.getElementById('param-colorContrast'), colorPhase: document.getElementById('param-colorPhase') };
+        function updateUI() { 
+            for (let k in inputs) { 
+                inputs[k].value = state[k]; 
+                const d = document.getElementById(`val-${k}`); 
+                if(d) d.textContent = (inputs[k].type==='color') ? state[k] : parseFloat(state[k]).toFixed(2); 
+            } 
+        }
+        function updateS() { for(let k in inputs) state[k] = inputs[k].value; updateUI(); }
+        for(let k in inputs) inputs[k].addEventListener('input', updateS);
+
+        const bO = document.getElementById('blackout');
+        function fadeSwap(nS) {
+            if (isTransitioning) return; isTransitioning = true; bO.style.opacity = '1';
+            setTimeout(() => { state = Object.assign({}, state, nS); updateUI(); bO.style.opacity = '0'; setTimeout(() => isTransitioning = false, 400); }, 400);
+        }
+
+        // --- Interaction ---
+        const overlay = document.getElementById('menu-overlay'), panel = document.getElementById('settings-panel'), modal = document.getElementById('info-modal');
+        function closeAll() { overlay.classList.remove('active'); panel.classList.remove('active'); modal.classList.remove('active'); }
+        document.getElementById('hamburger-btn').onclick = () => { overlay.classList.add('active'); panel.classList.add('active'); };
+        document.getElementById('close-menu-btn').onclick = closeAll;
+        document.getElementById('info-trigger-btn').onclick = () => { overlay.classList.add('active'); modal.classList.add('active'); };
+        document.getElementById('info-close').onclick = closeAll;
+        overlay.onclick = closeAll;
+
+        canvas.onpointerdown = (e) => { isDragging = true; pointerMoved = false; lastPointer = { x: e.clientX, y: e.clientY }; pointerDownStart = Date.now(); };
+        window.onpointermove = (e) => { if (isDragging) { const dx = e.clientX - lastPointer.x, dy = e.clientY - lastPointer.y; if (Math.abs(dx) > 2 || Math.abs(dy) > 2) pointerMoved = true; state.rotX -= dx * 0.005; state.rotY = Math.max(-1.5, Math.min(1.5, state.rotY - dy * 0.005)); lastPointer = { x: e.clientX, y: e.clientY }; } };
+        window.onpointerup = (e) => { isDragging = false; if (!pointerMoved && Date.now() - pointerDownStart < 300) fadeSwap(randS()); };
+        canvas.onwheel = (e) => { e.preventDefault(); state.zoom = Math.max(0.1, Math.min(10.0, state.zoom * Math.exp(e.deltaY * 0.001))); };
+
+        document.getElementById('btn-randomize').onclick = () => fadeSwap(randS());
+        document.getElementById('btn-reset').onclick = () => fadeSwap(defaultState);
+        document.getElementById('auto-advance').onchange = (e) => { autoAdvanceEnabled = e.target.checked; if(autoAdvanceInterval) clearInterval(autoAdvanceInterval); if(autoAdvanceEnabled) autoAdvanceInterval = setInterval(()=>fadeSwap(randS()), advanceSeconds*1000); };
+        document.getElementById('param-interval').oninput = (e) => { advanceSeconds = parseInt(e.target.value); document.getElementById('val-interval').textContent = advanceSeconds.toFixed(1); if(autoAdvanceEnabled) { clearInterval(autoAdvanceInterval); autoAdvanceInterval = setInterval(()=>fadeSwap(randS()), advanceSeconds*1000); } };
+
+        document.getElementById('btn-export-settings').onclick = () => { const a = document.createElement('a'); a.download = `BlobSnob_${Date.now()}.json`; a.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state)); a.click(); };
+        document.getElementById('btn-import-settings').onclick = () => document.getElementById('import-input').click();
+        document.getElementById('import-input').onchange = (e) => { const f = e.target.files[0]; if(!f) return; const r = new FileReader(); r.onload = (ev) => fadeSwap(JSON.parse(ev.target.result)); r.readAsText(f); };
+
+        let startTime = Date.now();
+        state = randS(); updateUI();
+        setTimeout(() => bO.style.opacity = '0', 100);
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>
